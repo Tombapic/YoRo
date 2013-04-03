@@ -315,15 +315,16 @@ int authenticate(SOCKET sock)
 }
 
 /**
- * Lit le répertoire des fichiers partagés et met à jour la base.
+ * Lit le répertoire des fichiers partagés et met à jour la base locale de l'utilisateur.
  * 
  * Retour : 0 si succès, -1 sinon.
  **/
 int update_shared_files()
 {
 	sqlite3 *db;
+	sqlite3_stmt *stmt;
 	char *query, *zErrMsg=0;
-	int db_err;
+	int db_err, found=0;
 	DIR *dir;
 	struct dirent *dp;
 	
@@ -335,6 +336,52 @@ int update_shared_files()
 		return EXIT_FAILURE;
 	}
 	
+	/* Avant toute chose, on supprime de la base les fichiers qui ne sont plus dans le répertoire.
+	 * Si l'utilisateur supprime un fichier du répertoire des fichiers partagés, ce dernier ne doit
+	 * plus apparaître dans la base de données. */
+	 
+	/* Pour chaque fichier de la base locale, on parcourt le répertoire :
+	 * - si le fichier est trouvé dans le répertoire, on le laisse
+	 * - sinon, on le supprime de la base.
+	 * 
+	 * Cette manière de procéder est très coûteuse en accès mémoire, mais simple à programmer ! */
+	query = sqlite3_mprintf("SELECT chemin FROM Fichiers;");
+	sqlite3_prepare(db, query, -1, &stmt, NULL);
+	
+	db_err = sqlite3_step(stmt);
+	
+	// Tant qu'il reste des tuples à lire.
+	while(db_err == SQLITE_ROW)
+	{
+		// Parcours du répertoire.
+		dir = opendir("P2P");
+		
+		if(dir == NULL)
+		{
+			printf("Erreur : echec de l'ouverture du repertoire des fichiers partages.\n");
+			return -1;
+		}
+		
+		while(dp != NULL)
+		{
+			if(strcmp(dp->d_name, (char*)sqlite3_column_text(stmt, 0)))
+				found = 1;
+			
+			dp = readdir(dir);
+		}
+		
+		// Si le fichier n'a pas été trouvé, on le supprime de la base.
+		if(found == 0)
+		{
+			query = sqlite3_mprintf("DELETE FROM Fichiers WHERE chemin = '%q';", (char*)sqlite3_column_text(stmt, 0));
+			db_err = sqlite3_exec(db, query, NULL, 0, &zErrMsg);
+		}
+		
+		closedir(dir);
+		db_err = sqlite3_step(stmt);
+	}
+	
+	// On ajoute ensuite les nouveaux fichiers. Ceux déjà présents dans la base ne seront pas modifiés.
 	dir = opendir("P2P");
 	
 	if(dir == NULL)
@@ -351,13 +398,32 @@ int update_shared_files()
 		if(dp->d_name[0] != '.')
 		{
 			/* Ajout du nouveau client à la base. Comme le chemin du fichier est la clé primaire,
-			 * si le fichier existe déjà, il ne sera pas ajouté. */
-			 
+			 * si le fichier existe déjà, il ne sera pas ajouté.
+			 * EN FAIT SI ! QUAND ON ENVOIE UNE REQUÊTE VIA UN PROGRAMME, CELA VIOLE VISIBLEMENT
+			 * EN TOUTE IMPUNITÉ LES CONTRAINTES DE CLÉS PRIMAIRES ! */
+			
+			//////////////////////////// CORRIGER ICI !
+			
+			// On vérifie que le fichier n'est pas déjà présent dans la base.
+			// Récupération de l'identifiant du propriétaire du fichier.
+			query = sqlite3_mprintf("SELECT * FROM Fichiers WHERE chemin = '%q';", dp->d_name);
+			sqlite3_prepare(db, query, -1, &stmt, NULL);
+			db_err = sqlite3_step(stmt);
+			
+			//~ if(db_err == SQLITE_EMTPY) printf("pouet !\n");
+			
 			// Préparation de la requête. Pour le moment, on n'entre aucune description.
-			query = sqlite3_mprintf("INSERT INTO Fichiers VALUES('%q', '');", dp->d_name);
+			//query = sqlite3_mprintf("INSERT ON CONFLICT IGNORE INTO Fichiers VALUES('%q', '');", dp->d_name);
+			query = sqlite3_mprintf("INSERT OR IGNORE INTO Fichiers VALUES('%q', '');", dp->d_name);
 			
 			// Exécution de la requête.
 			db_err = sqlite3_exec(db, query, NULL, 0, &zErrMsg);
+			
+			if(db_err != SQLITE_OK)
+			{
+				printf("Erreur SQL : %s\n", zErrMsg);
+				return -1;
+			}
 		}
 		
 		dp = readdir(dir);

@@ -150,7 +150,6 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 	// Tant que le client est connecté, on le gère.
 	while(strcmp(buf, "disconnect") != 0)
 	{
-		printf("ça boucle ?\n");
 		// Si le client demande une authentification.
 		if(strcmp(buf, "auth") == 0)
 		{
@@ -382,8 +381,6 @@ int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 	
 	sock_err = recv(sock, path, BUFFER_SIZE, 0);
 	if(sock_err == SOCKET_ERROR) return -1;
-	
-	printf("%s\n", path);
 	
 	// Tant que le client n'a pas envoyé tous les fichiers.
 	while(strcmp(path, "endoffilelist") != 0)
