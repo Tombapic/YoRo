@@ -3,146 +3,12 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <sqlite3.h>
 #include <string.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#define INVALID_SOCKET -1
-#define SOCKET_ERROR -1
-#define PORT 2013
-#define BUFFER_SIZE 512
-
-typedef int SOCKET;
-typedef struct sockaddr_in SOCKADDR_IN;
-typedef struct sockaddr SOCKADDR;
-
-int create_account(SOCKET sock);
-int authenticate(SOCKET sock);
-int check_client(SOCKET sock);
-int update_shared_files();
-int send_shared_files(SOCKET sock);
-
-int main(int argc, char *argv[])
-{
-	if(argc != 2)
-	{
-		printf("Utilisation : server <ip_du_serveur>\n");
-		return EXIT_FAILURE;
-	}
-	
-	system("clear");
-	printf("--------------------------------------------------------------------------------");
-	printf("                                 SERVEUR LOCAL\n");
-	printf("--------------------------------------------------------------------------------");
-	
-	int sock_err;
-	int user_choice;
-	char *server_addr = argv[1];
-	
-	// Socket et contexte d'adressage du serveur.
-	SOCKET sock;
-	SOCKADDR_IN sin;
-	socklen_t ssize = sizeof(sin);
-	
-	// Socket et contexte d'adressage du serveur central.
-	SOCKET main_sock;
-	SOCKADDR_IN main_sin;
-	socklen_t main_size = sizeof(main_sin);
-	
-	// Socket et contexte d'adressage du client.
-	SOCKET csock;
-	SOCKADDR_IN csin;
-	socklen_t csize = sizeof(csin);
-	
-	sock = socket(AF_INET, SOCK_STREAM, 0);
-	main_sock = socket(AF_INET, SOCK_STREAM, 0);
-	
-	if(sock == INVALID_SOCKET)
-	{
-		printf("Erreur : echec de la creation de la socket.\n");
-		return EXIT_FAILURE;
-	}
-	
-	sin.sin_addr.s_addr = htonl(INADDR_ANY);
-	sin.sin_family = AF_INET;
-	sin.sin_port = htons(PORT);
-	
-	main_sin.sin_addr.s_addr = inet_addr(server_addr);
-	main_sin.sin_family = AF_INET;
-	main_sin.sin_port = htons(PORT);
-	
-	// En premier lieu, connexion au serveur central et authentification.
-	sock_err = connect(main_sock, (SOCKADDR*)&main_sin, main_size);
-	
-	if(sock_err == SOCKET_ERROR)
-	{
-		printf("Erreur : echec de la connexion au serveur central.\n");
-		return EXIT_FAILURE;
-	}
-	
-	printf("Connexion à %s sur le port %d\n", inet_ntoa(main_sin.sin_addr), htons(main_sin.sin_port));
-	
-	printf("1. S'authentifier\n");
-	printf("2. Creer un compte\n");
-	scanf("%1d", &user_choice);
-	
-	while((user_choice!=1) && (user_choice!=2)) scanf("%1d", &user_choice);
-	
-	if(user_choice == 1)
-	{
-		sock_err = authenticate(main_sock);
-		
-		// Si erreur ou abandon de l'authentification par l'utilisateur.
-		if((sock_err==-1) || (sock_err==1))
-		{
-			printf("Erreur : echec de l'authentification auprès du serveur.\n");
-			return EXIT_FAILURE;
-		}
-	}
-	
-	else
-	{
-		sock_err = create_account(main_sock);
-		
-		if(sock_err == -1)
-		{
-			printf("Erreur : echec de la creation du compte.\n");
-			return EXIT_FAILURE;
-		}
-	}
-	
-	/*
-	 * Maintenant que le serveur local est lancé, on met à jour la table des fichiers partagés
-	 * puis, dans un second temps, on envoie la liste de ces fichiers au serveur central.
-	 */
-	update_shared_files();
-	
-	sock_err = send_shared_files(main_sock);
-	if(sock_err == -1)
-	{
-		printf("Erreur : echec de l'envoi de la liste des fichiers partages.\n");
-		return EXIT_FAILURE;
-	}
-	
-	/* UNE FOIS QUE LE SERVEUR EST INITIALISÉ. */
-	sock_err = send(sock, "initok", BUFFER_SIZE, 0);
-	
-	// A compléter !
-	// 5 est le nombre maximal de connexions pouvant être mises en attente.
-	sock_err = listen(sock, 5);
-	
-	if(sock_err == SOCKET_ERROR)
-	{
-		printf("Erreur : echec de l'ecoute de la socket.\n");
-		return EXIT_FAILURE;
-	}
-	
-	close(sock);
-	
-	return EXIT_SUCCESS;
-}
+#include "server.h"
 
 /**
  * Crée un compte sur le réseau.
@@ -362,9 +228,11 @@ int update_shared_files()
 			return -1;
 		}
 		
+		dp = readdir(dir);
+		
 		while(dp != NULL)
 		{
-			if(strcmp(dp->d_name, (char*)sqlite3_column_text(stmt, 0)))
+			if(strcmp(dp->d_name, (char*)sqlite3_column_text(stmt, 0)) == 0)
 				found = 1;
 			
 			dp = readdir(dir);
@@ -374,9 +242,10 @@ int update_shared_files()
 		if(found == 0)
 		{
 			query = sqlite3_mprintf("DELETE FROM Fichiers WHERE chemin = '%q';", (char*)sqlite3_column_text(stmt, 0));
-			db_err = sqlite3_exec(db, query, NULL, 0, &zErrMsg);
+			db_err = sqlite3_exec(db, query, NULL, 0, NULL);
 		}
 		
+		found = 0;
 		closedir(dir);
 		db_err = sqlite3_step(stmt);
 	}
@@ -398,22 +267,9 @@ int update_shared_files()
 		if(dp->d_name[0] != '.')
 		{
 			/* Ajout du nouveau client à la base. Comme le chemin du fichier est la clé primaire,
-			 * si le fichier existe déjà, il ne sera pas ajouté.
-			 * EN FAIT SI ! QUAND ON ENVOIE UNE REQUÊTE VIA UN PROGRAMME, CELA VIOLE VISIBLEMENT
-			 * EN TOUTE IMPUNITÉ LES CONTRAINTES DE CLÉS PRIMAIRES ! */
-			
-			//////////////////////////// CORRIGER ICI !
-			
-			// On vérifie que le fichier n'est pas déjà présent dans la base.
-			// Récupération de l'identifiant du propriétaire du fichier.
-			query = sqlite3_mprintf("SELECT * FROM Fichiers WHERE chemin = '%q';", dp->d_name);
-			sqlite3_prepare(db, query, -1, &stmt, NULL);
-			db_err = sqlite3_step(stmt);
-			
-			//~ if(db_err == SQLITE_EMTPY) printf("pouet !\n");
+			 * si le fichier existe déjà, il ne sera pas ajouté. */
 			
 			// Préparation de la requête. Pour le moment, on n'entre aucune description.
-			//query = sqlite3_mprintf("INSERT ON CONFLICT IGNORE INTO Fichiers VALUES('%q', '');", dp->d_name);
 			query = sqlite3_mprintf("INSERT OR IGNORE INTO Fichiers VALUES('%q', '');", dp->d_name);
 			
 			// Exécution de la requête.

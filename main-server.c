@@ -5,34 +5,18 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
-#include <sqlite3.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#define INVALID_SOCKET -1
-#define SOCKET_ERROR -1
-#define PORT 2013
-
-// La taille du buffer s'aligne sur celle des paquets (512 octets).
-#define BUFFER_SIZE 512
-#define SERVER_ADDR "127.0.0.1"
-
-typedef int SOCKET;
-typedef struct sockaddr_in SOCKADDR_IN;
-typedef struct sockaddr SOCKADDR;
-
-int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db);
-int check_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db);
-int add_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db);
-int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db);
+#include "main-server.h"
 
 int main(int argc, char *argv[])
 {
 	system("clear");
 	printf("--------------------------------------------------------------------------------");
 	printf("                                SERVEUR CENTRAL\n");
-	printf("--------------------------------------------------------------------------------");
+	printf("--------------------------------------------------------------------------------\n");
 	
 	// Pointeur sur la base de données du serveur.
 	sqlite3 *db;
@@ -70,7 +54,7 @@ int main(int argc, char *argv[])
 	// Paramétrage de la socket.
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_family = AF_INET;
-	sin.sin_port = htons(PORT);
+	sin.sin_port = htons(SERVER_PORT);
 	
 	sock_err = bind(sock, (SOCKADDR*)&sin, ssize);
 	
@@ -184,8 +168,16 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 			if(sock_err == -1) return -1;
 		}
 		
-		///////////////// TEST ///////////////////
-		else if(strcmp(buf, "initok") == 0) { return 10; }
+		else if(strcmp(buf, "initok") == 0)
+		{
+			// On se contente de réceptionner cet ACK. Aucun traitement n'est nécessaire.
+		}
+		
+		else if(strcmp(buf, "download") == 0)
+		{
+			sock_err = get_owner(sock, sin, db);
+			if(sock_err == -1) return -1;
+		}
 		
 		/* RAJOUTER TOUTES LES FONCTIONS DE GESTION ICI. */
 		
@@ -203,7 +195,7 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		}
 	}
 	
-	/* ECRIRE ICI LA FONCTION DE DÉCONNEXION QUI PURGE LA BASE DES FICHIERS DE L'UTILISATEUR. */
+	disconnect_client(sin, db);
 	
 	return 0;
 }
@@ -269,7 +261,7 @@ int check_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		
 		// Mise à jour de l'adresse IP de l'utilisateur.
 		query = sqlite3_mprintf("UPDATE Utilisateurs SET ip = '%q' WHERE id = '%q';",
-							inet_ntoa(sin.sin_addr), login, inet_ntoa(sin.sin_addr));
+							inet_ntoa(sin.sin_addr), login);
 		
 		sqlite3_exec(db, query, NULL, 0, NULL);
 		
@@ -344,6 +336,8 @@ int add_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		if(sock_err == SOCKET_ERROR) return -1;
 	}
 	
+	printf("Un client cree un compte.\n\n");
+	
 	return 0;
 }
 
@@ -395,8 +389,8 @@ int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		
 		/* ATTENTION !
 		 * PAS BESOIN DE L'ID ! Si deux fois le même fichier dans la base, peu importe.
-		 * Si un veut télécharger fic.txt et que deux utilisateurs le proposent, on prend le premier qui vient...
-		 * trouver le proprio grâce à l'ip dans la base
+		 * Si un veut télécharger fic.txt et que deux utilisateurs le proposent, on prend le premier qui vient.
+		 * Trouver le propriétaire grâce à l'IP dans la base.
 		 * PAS BESOIN DE LA TAILLE ! ON LA PASSERA JUSTE LORSQUE QUELQU'UN EN AURA BESOIN EN LA CALCULANT DIRECTEMENT
 		 * SUR LE FICHIER ! */	
 		
@@ -412,6 +406,88 @@ int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		
 		// Réception du tuple suivant.
 		sock_err = recv(sock, path, BUFFER_SIZE, 0);
+		if(sock_err == SOCKET_ERROR) return -1;
+	}
+	
+	return 0;
+}
+
+/**
+ * Supprime les fichiers partagés d'un client qui se déconnecte de la base de données.
+ * 
+ * Paramètres :
+ * - login	: le login de ce client.
+ * - db		: un pointeur sur la base de données du serveur.
+ * 
+ * Retour : 0 si succès, -1 sinon.
+ * 
+ **/
+int disconnect_client(SOCKADDR_IN sin, sqlite3 *db)
+{
+	int db_err;
+	char *query, *zErrMsg;
+	
+	// Préparation de la requête.
+	query = sqlite3_mprintf("DELETE FROM Fichiers \
+							WHERE proprietaire \
+							IN(SELECT id FROM Utilisateurs WHERE ip = '%q');", inet_ntoa(sin.sin_addr));
+	
+	// Exécution de la requête.
+	db_err = sqlite3_exec(db, query, NULL, 0, &zErrMsg);
+	
+	if(db_err != SQLITE_OK)
+	{
+		printf("Erreur SQL : %s\n", zErrMsg);
+		return -1;
+	}
+	
+	printf("Deconnexion de %s.\n\n", inet_ntoa(sin.sin_addr));
+	
+	return 0;
+}
+
+/**
+ * Transmet l'IP du propriétaire d'un fichier demandé par un client.
+ * 
+ * Paramètres :
+ * - sock	: la socket sur laquelle est connecté le client
+ * - sin	: le contexte d'adressage de cette socket.
+ * - db		: un pointeur sur la base de données du serveur.
+ * 
+ * Retour : 0 si succès, -1 sinon.
+ **/
+int get_owner(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
+{
+	char buf[BUFFER_SIZE];
+	int sock_err;
+	char *query;
+	sqlite3_stmt *stmt;
+	
+	// Réception du nom du fichier.
+	sock_err = recv(sock, buf, BUFFER_SIZE, 0);
+	if(sock_err == SOCKET_ERROR) return -1;
+	
+	printf("Un client demande le fichier \"%s\".\n\n", buf);
+	
+	// Recherche de l'IP du propriétaire dans la base.
+	query = sqlite3_mprintf("SELECT Utilisateurs.ip FROM Utilisateurs, Fichiers \
+							WHERE Utilisateurs.id = Fichiers.proprietaire \
+							AND Fichiers.chemin = '%q';", buf);
+	sqlite3_prepare(db, query, -1, &stmt, NULL);
+	sock_err = sqlite3_step(stmt);	// Exécution de la requête.
+	
+	// Envoi de l'IP du propriétaire du fichier.
+	if((char*)sqlite3_column_text(stmt, 0) == NULL)
+	{
+		strcpy(buf, "unknownfile");
+		sock_err = send(sock, buf, BUFFER_SIZE, 0);
+		if(sock_err == SOCKET_ERROR) return -1;
+	}
+	
+	else
+	{
+		strcpy(buf, (char*)sqlite3_column_text(stmt, 0));
+		sock_err = send(sock, buf, BUFFER_SIZE, 0);
 		if(sock_err == SOCKET_ERROR) return -1;
 	}
 	
