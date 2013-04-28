@@ -7,7 +7,6 @@
 
 // La taille du buffer s'aligne sur celle des paquets (512 octets).
 #define BUFFER_SIZE 512
-#define SERVER_ADDR "127.0.0.1"
 
 typedef int SOCKET;
 typedef struct sockaddr_in SOCKADDR_IN;

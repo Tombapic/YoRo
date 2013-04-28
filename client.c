@@ -52,11 +52,10 @@ int handle_user(SOCKET sock, SOCKADDR_IN sin)
  * Paramètres :
  * - sock	: la socket sur laquelle communiquer avec l'hôte.
  * - sin	: le contexte d'adressage de cette socket.
- * - db		: un pointeur sur la base de données locale.
  * 
  * Retour : 0 si succès, -1 sinon.
  **/
-int handle_peer(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
+int handle_peer(SOCKET sock, SOCKADDR_IN sin)
 {
 	FILE *file = NULL;
 	char buf[BUFFER_SIZE];
@@ -178,6 +177,7 @@ int download_file(SOCKET sock)
 	strcpy(buf, file_name);
 	sock_err = send(hsock, buf, BUFFER_SIZE, 0);
 	if(sock_err == SOCKET_ERROR) return -1;
+	printf("fichier : %s\n\n", buf);
 	
 	// L'hôte envoie la taille du fichier.
 	sock_err = recv(hsock, buf, BUFFER_SIZE, 0);

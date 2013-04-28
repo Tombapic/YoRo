@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall
+CFLAGS=-Wall -g
 LDFLAGS=-lsqlite3 -L/usr/local/lib
 EXEC=main-server host server client
 
