@@ -18,18 +18,6 @@ int main(int argc, char *argv[])
 	printf("                                SERVEUR CENTRAL\n");
 	printf("--------------------------------------------------------------------------------\n");
 	
-	// Pointeur sur la base de données du serveur.
-	sqlite3 *db;
-	int db_err;
-	
-	db_err = sqlite3_open("main-server.db", &db);
-	
-	if(db_err)
-	{
-		printf("Erreur : echec de l'ouverture de la base de donnees.\n");
-		return EXIT_FAILURE;
-	}
-	
 	int status;
 	int sock_err;
 	
@@ -95,7 +83,7 @@ int main(int argc, char *argv[])
 			break;
 			
 			case 0 :	// Fils.
-				handle_client(csock, csin, db);
+				handle_client(csock, csin);
 				close(csock);
 				kill(getpid(), SIGTERM);
 			
@@ -108,7 +96,6 @@ int main(int argc, char *argv[])
 	}
 	
 	close(sock);
-	sqlite3_close(db);
 	
 	return EXIT_SUCCESS;
 }
@@ -119,11 +106,10 @@ int main(int argc, char *argv[])
  * Paramètres :
  * - sock	: la socket sur laquelle communiquer avec le client.
  * - sin	: le contexte d'adressage de cette socket.
- * - db		: un pointeur sur la base de données du serveur.
  * 
  * Retour : 0 si succès, -1 sinon.
  **/
-int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
+int handle_client(SOCKET sock, SOCKADDR_IN sin)
 {
 	char buf[BUFFER_SIZE];
 	int sock_err;
@@ -149,7 +135,7 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 				 * Cela évite la boucle infinie dans le cas où le client aurait demandé par erreur une
 				 * authentification sans avoir de compte sur le réseau.
 				 */
-				sock_err = check_client(sock, sin, db);
+				sock_err = check_client(sock, sin);
 				sock_err = recv(sock, buf, BUFFER_SIZE, 0);
 			}
 		}
@@ -158,13 +144,13 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		else if(strcmp(buf, "add") == 0)
 		{
 			sock_err = -1;
-			while(sock_err != 0) sock_err = add_client(sock, sin, db);
+			while(sock_err != 0) sock_err = add_client(sock, sin);
 		}
 		
 		// Si le client uploade la liste de ses fichiers partagés.
 		else if(strcmp(buf, "uploadfilelist") == 0)
 		{
-			sock_err = receive_shared_files(sock, sin, db);
+			sock_err = receive_shared_files(sock, sin);
 			if(sock_err == -1) return -1;
 		}
 		
@@ -176,7 +162,7 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		// Si le client demande le téléchargement d'un fichier.
 		else if(strcmp(buf, "download") == 0)
 		{
-			sock_err = get_owner(sock, sin, db);
+			sock_err = get_owner(sock, sin);
 			if(sock_err == -1) return -1;
 		}
 		
@@ -192,11 +178,12 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		if(sock_err == 0)
 		{
 			printf("Arret critique du client.\n");
+			disconnect_client(sin);
 			return -1;
 		}
 	}
 	
-	disconnect_client(sin, db);
+	disconnect_client(sin);
 	
 	return 0;
 }
@@ -208,11 +195,10 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
  * Paramètre :
  * - sock	: la socket sur laquelle reçevoir les informations d'authentification.
  * - sin	: le contexte d'adressage de cette socket.
- * - db		: un pointeur sur la base de données du serveur.
  * 
  * Retour : 0 si succès, -1 sinon.
  **/
-int check_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
+int check_client(SOCKET sock, SOCKADDR_IN sin)
 {
 	int sock_err;
 	char *query;
@@ -222,6 +208,18 @@ int check_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 	char buf[BUFFER_SIZE];
 	char login[BUFFER_SIZE];
 	char password[BUFFER_SIZE];
+	
+	// Pointeur sur la base de données du serveur.
+	sqlite3 *db;
+	int db_err;
+	
+	db_err = sqlite3_open("main-server.db", &db);
+	
+	if(db_err)
+	{
+		printf("Erreur : echec de l'ouverture de la base de donnees.\n");
+		return EXIT_FAILURE;
+	}
 	
 	sock_err = recv(sock, login, BUFFER_SIZE, 0);
 	
@@ -248,6 +246,8 @@ int check_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		strcpy(buf, "authko");
 		sock_err = send(sock, buf, BUFFER_SIZE, 0);
 		printf("Echec de l'authentification.\n");
+		sqlite3_finalize(stmt);
+		sqlite3_close(db);
 		return -1;
 	}
 	
@@ -266,6 +266,9 @@ int check_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		
 		sqlite3_exec(db, query, NULL, 0, NULL);
 		
+		sqlite3_finalize(stmt);
+		sqlite3_close(db);
+		
 		return 0;
 	}
 	
@@ -274,6 +277,10 @@ int check_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		strcpy(buf, "authko");
 		sock_err = send(sock, buf, BUFFER_SIZE, 0);
 		printf("Echec de l'authentification.\n");
+		
+		sqlite3_finalize(stmt);
+		sqlite3_close(db);
+		
 		return -1;
 	}
 }
@@ -284,11 +291,10 @@ int check_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
  * Paramètres :
  * - sock	: la socket sur laquelle reçevoir les informations d'authentification.
  * - sin	: le contexte d'adressage de cette socket.
- * - db		: un pointeur sur la base de données du serveur.
  * 
  * Retour : 0 si succès, -1 sinon.
  **/
-int add_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
+int add_client(SOCKET sock, SOCKADDR_IN sin)
 {
 	int db_err;
 	int sock_err;
@@ -297,6 +303,17 @@ int add_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 	char buf[BUFFER_SIZE];
 	char login[BUFFER_SIZE];
 	char password[BUFFER_SIZE];
+	
+	// Pointeur sur la base de données du serveur.
+	sqlite3 *db;
+	
+	db_err = sqlite3_open("main-server.db", &db);
+	
+	if(db_err)
+	{
+		printf("Erreur : echec de l'ouverture de la base de donnees.\n");
+		return EXIT_FAILURE;
+	}
 	
 	sock_err = recv(sock, login, BUFFER_SIZE, 0);
 	
@@ -325,6 +342,8 @@ int add_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		
 		if(sock_err == SOCKET_ERROR) return -1;
 		
+		sqlite3_close(db);
+		
 		return -1;
 	}
 	
@@ -339,6 +358,8 @@ int add_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 	
 	printf("Un client cree un compte.\n\n");
 	
+	sqlite3_close(db);
+	
 	return 0;
 }
 
@@ -348,17 +369,28 @@ int add_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
  * Paramètres :
  * - sock	: la socket sur laquelle est connecté le client
  * - sin	: le contexte d'adressage de cette socket.
- * - db		: un pointeur sur la base de données du serveur.
  * 
  * Retour : 0 si succès, -1 sinon.
  **/
-int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
+int receive_shared_files(SOCKET sock, SOCKADDR_IN sin)
 {
 	int sock_err, db_err;
 	char *query, *zErrMsg;
 	sqlite3_stmt *stmt;
 	char path[BUFFER_SIZE];
 	char description[BUFFER_SIZE];
+	char owner[16];
+	
+	// Pointeur sur la base de données du serveur.
+	sqlite3 *db;
+	
+	db_err = sqlite3_open("main-server.db", &db);
+	
+	if(db_err)
+	{
+		printf("Erreur : echec de l'ouverture de la base de donnees.\n");
+		return EXIT_FAILURE;
+	}
 	
 	printf("Un client uploade ses fichiers.\n");
 	
@@ -371,8 +403,12 @@ int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 	if((char*)sqlite3_column_text(stmt, 0) == NULL)
 	{
 		printf("Erreur : utilisateur inconnu.\n");
+		sqlite3_close(db);
 		return -1;
 	}
+	
+	strcpy(owner, (char*)sqlite3_column_text(stmt, 0));
+	sqlite3_finalize(stmt);
 	
 	sock_err = recv(sock, path, BUFFER_SIZE, 0);
 	if(sock_err == SOCKET_ERROR) return -1;
@@ -396,12 +432,13 @@ int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		 * SUR LE FICHIER ! */	
 		
 		query = sqlite3_mprintf("INSERT INTO Fichiers VALUES('%q', '%q', '%q');",
-								path, (char*)sqlite3_column_text(stmt, 0), description);
+								path, owner, description);
 		db_err = sqlite3_exec(db, query, NULL, 0, &zErrMsg);
 		
 		if(db_err != SQLITE_OK)
 		{
 			printf("Erreur SQL : %s\n", zErrMsg);
+			sqlite3_close(db);
 			return -1;
 		}
 		
@@ -409,6 +446,8 @@ int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		sock_err = recv(sock, path, BUFFER_SIZE, 0);
 		if(sock_err == SOCKET_ERROR) return -1;
 	}
+	
+	sqlite3_close(db);
 	
 	return 0;
 }
@@ -418,15 +457,25 @@ int receive_shared_files(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
  * 
  * Paramètres :
  * - login	: le login de ce client.
- * - db		: un pointeur sur la base de données du serveur.
  * 
  * Retour : 0 si succès, -1 sinon.
  * 
  **/
-int disconnect_client(SOCKADDR_IN sin, sqlite3 *db)
+int disconnect_client(SOCKADDR_IN sin)
 {
 	int db_err;
 	char *query, *zErrMsg;
+	
+	// Pointeur sur la base de données du serveur.
+	sqlite3 *db;
+	
+	db_err = sqlite3_open("main-server.db", &db);
+	
+	if(db_err)
+	{
+		printf("Erreur : echec de l'ouverture de la base de donnees.\n");
+		return EXIT_FAILURE;
+	}
 	
 	// Préparation de la requête.
 	query = sqlite3_mprintf("DELETE FROM Fichiers \
@@ -439,10 +488,13 @@ int disconnect_client(SOCKADDR_IN sin, sqlite3 *db)
 	if(db_err != SQLITE_OK)
 	{
 		printf("Erreur SQL : %s\n", zErrMsg);
+		sqlite3_close(db);
 		return -1;
 	}
 	
 	printf("Deconnexion de %s.\n\n", inet_ntoa(sin.sin_addr));
+	
+	sqlite3_close(db);
 	
 	return 0;
 }
@@ -453,16 +505,27 @@ int disconnect_client(SOCKADDR_IN sin, sqlite3 *db)
  * Paramètres :
  * - sock	: la socket sur laquelle est connecté le client
  * - sin	: le contexte d'adressage de cette socket.
- * - db		: un pointeur sur la base de données du serveur.
  * 
  * Retour : 0 si succès, -1 sinon.
  **/
-int get_owner(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
+int get_owner(SOCKET sock, SOCKADDR_IN sin)
 {
 	char buf[BUFFER_SIZE];
 	int sock_err;
 	char *query;
 	sqlite3_stmt *stmt;
+	
+	// Pointeur sur la base de données du serveur.
+	sqlite3 *db;
+	int db_err;
+	
+	db_err = sqlite3_open("main-server.db", &db);
+	
+	if(db_err)
+	{
+		printf("Erreur : echec de l'ouverture de la base de donnees.\n");
+		return EXIT_FAILURE;
+	}
 	
 	// Réception du nom du fichier.
 	sock_err = recv(sock, buf, BUFFER_SIZE, 0);
@@ -491,6 +554,9 @@ int get_owner(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		sock_err = send(sock, buf, BUFFER_SIZE, 0);
 		if(sock_err == SOCKET_ERROR) return -1;
 	}
+	
+	sqlite3_finalize(stmt);
+	sqlite3_close(db);
 	
 	return 0;
 }
