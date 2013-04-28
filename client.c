@@ -91,14 +91,12 @@ int handle_peer(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 		if(remaining_bytes >= BUFFER_SIZE)
 		{
 			fread(buf, BUFFER_SIZE, 1, file);
-			//buf[BUFFER_SIZE] = '\0';
 			remaining_bytes = remaining_bytes - BUFFER_SIZE;
 		}
 		
 		else
 		{
 			fread(buf, remaining_bytes, 1, file);
-			//buf[remaining_bytes] = '\0';
 			remaining_bytes = 0;
 		}
 		

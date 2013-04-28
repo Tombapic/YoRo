@@ -168,7 +168,6 @@ int main(int argc, char *argv[])
 					
 					default :	// Père.
 						waitpid(-1, &status, WNOHANG);
-						kill(getpid(), SIGTERM);
 				}
 			}
 		
