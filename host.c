@@ -129,71 +129,61 @@ int main(int argc, char *argv[])
 	 * la boucle d'écoute qui permet de traiter d'éventuels clients. */
 	sock_err = send(main_sock, "initok", BUFFER_SIZE, 0);
 	
-	FILE *file = NULL;
-	
 	/* On crée un processus chargé d'écouter les nouveaux clients.
 	 * Le processus père sera chargé d'exécuter les demandes de
 	 * l'utilisateur. */
 	switch(fork())
-		{
-			case -1 :	// Erreur.
-			break;
-			
-			case 0 :	// Fils.
-				file = fopen("log.txt", "w");
-				fputs("fork\n", file);
-				fclose(file);
-				
-				while(1)
-				{
-					sock_err = bind(sock, (SOCKADDR*)&sin, ssize);
-	
-					// 5 est le nombre maximal de connexions pouvant être mises en attente.
-					sock_err = listen(sock, 5);
-					
-					if(sock_err == SOCKET_ERROR)
-					{
-						printf("Erreur : echec de l'ecoute de la socket.\n");
-						return EXIT_FAILURE;
-					}
-					
-					csock = accept(sock, (SOCKADDR*)&csin, &csize);
-					
-					if(csock == INVALID_SOCKET)
-						return EXIT_FAILURE;
-					
-					file = fopen("log.txt", "a");
-					fputs("accept\n", file);
-					fclose(file);
-					
-					switch(fork())
-					{
-						case -1 :	// Erreur.
-						break;
-						
-						case 0 :	// Fils.
-							handle_peer(csock, csin, db);
-							close(csock);
-							kill(getpid(), SIGTERM);
-						
-						default :	// Père.
-							waitpid(-1, &status, WNOHANG);
-							kill(getpid(), SIGTERM);
-					}
-				}
-			
-			default :	// Père.
-				// Le terminal attend les instructions de l'utilisateur.
-				handle_user(main_sock, main_sin);
-				
-				// Déconnexion de l'utilisateur.
-				sock_err = send(main_sock, "disconnect", BUFFER_SIZE, 0);
+	{
+		case -1 :	// Erreur.
+		break;
+		
+		case 0 :	// Fils.
+			while(1)
+			{
+				sock_err = bind(sock, (SOCKADDR*)&sin, ssize);
+
+				// 5 est le nombre maximal de connexions pouvant être mises en attente.
+				sock_err = listen(sock, 5);
 				
 				if(sock_err == SOCKET_ERROR)
+				{
+					printf("Erreur : echec de l'ecoute de la socket.\n");
+					return EXIT_FAILURE;
+				}
+				
+				csock = accept(sock, (SOCKADDR*)&csin, &csize);
+				
+				if(csock == INVALID_SOCKET)
 					return EXIT_FAILURE;
 				
-				waitpid(-1, &status, WNOHANG);
-		}
+				switch(fork())
+				{
+					case -1 :	// Erreur.
+					break;
+					
+					case 0 :	// Fils.
+						handle_peer(csock, csin, db);
+						close(csock);
+						kill(getpid(), SIGTERM);
+					
+					default :	// Père.
+						waitpid(-1, &status, WNOHANG);
+						kill(getpid(), SIGTERM);
+				}
+			}
+		
+		default :	// Père.
+			// Le terminal attend les instructions de l'utilisateur.
+			handle_user(main_sock, main_sin);
+			
+			// Déconnexion de l'utilisateur.
+			sock_err = send(main_sock, "disconnect", BUFFER_SIZE, 0);
+			
+			if(sock_err == SOCKET_ERROR)
+				return EXIT_FAILURE;
+			
+			waitpid(-1, &status, WNOHANG);
+	}
 	
 	close(sock);
 	

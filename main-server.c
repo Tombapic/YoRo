@@ -173,6 +173,7 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 			// On se contente de réceptionner cet ACK. Aucun traitement n'est nécessaire.
 		}
 		
+		// Si le client demande le téléchargement d'un fichier.
 		else if(strcmp(buf, "download") == 0)
 		{
 			sock_err = get_owner(sock, sin, db);
@@ -317,7 +318,7 @@ int add_client(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 	// L'identifiant existe déjà dans la base. On prévient le client.
 	if(db_err != SQLITE_OK)
 	{
-		printf("Echec de la creation du compte. L'identifiant est deja present dans la base.\n");
+		printf("Erreur SQL : %s\n", zErrMsg);
 		
 		strcpy(buf, "addko");
 		sock_err = send(sock, buf, BUFFER_SIZE, 0);

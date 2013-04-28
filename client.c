@@ -70,20 +70,12 @@ int handle_peer(SOCKET sock, SOCKADDR_IN sin, sqlite3 *db)
 	
 	strcat(path, buf);
 	
-	file = fopen("log.txt", "a");
-	fputs(path, file);
-	fclose(file);
-	
 	fd = open(path, O_RDONLY);
 	fstat(fd, &st);
 	close(fd);
 	
 	// Convertit un entier en chaîne de caractère.
 	sprintf(buf, "%d", (int)st.st_size);
-	
-	file = fopen("log.txt", "a");
-	fputs(buf, file);
-	fclose(file);
 	
 	// Envoi de la taille du fichier.
 	sock_err = send(sock, buf, BUFFER_SIZE, 0);
