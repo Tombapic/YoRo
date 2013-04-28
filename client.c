@@ -185,6 +185,8 @@ int download_file(SOCKET sock)
 	
 	file_size = atoi(buf);
 	
+	printf("taille du fichier : %d\n\n", file_size);
+	
 	/* On crée un nouveau fichier et on le construit au fur et à mesure
 	 * de la réception des octets. */
 	strcat(path, file_name);
