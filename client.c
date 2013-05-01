@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -156,6 +157,9 @@ int download_file(SOCKET sock)
 	if(strcmp(buf, "unknownfile") == 0)
 	{
 		printf("Erreur : le fichier n'existe pas sur le réseau.\n\n");
+		printf("Appuyez sur une touche pour continuer.\n");
+		getchar();
+		getchar();
 		return -1;
 	}
 	
@@ -165,7 +169,15 @@ int download_file(SOCKET sock)
 	hsin.sin_family = AF_INET;
 	hsin.sin_port = htons(HOST_PORT);
 	
+	file = fopen("log.txt", "a");
+	fprintf(file, "Connexion sur %s\n", buf);
+	fclose(file);
+	
 	sock_err = connect(hsock, (SOCKADDR*)&hsin, hsize);
+	
+	file = fopen("log.txt", "a");
+	fprintf(file, "Code erreur = %d, errno : %d\n", sock_err, errno);
+	fclose(file);
 	
 	if(sock_err == SOCKET_ERROR)
 	{
@@ -177,7 +189,6 @@ int download_file(SOCKET sock)
 	strcpy(buf, file_name);
 	sock_err = send(hsock, buf, BUFFER_SIZE, 0);
 	if(sock_err == SOCKET_ERROR) return -1;
-	printf("fichier : %s\n\n", buf);
 	
 	// L'hôte envoie la taille du fichier.
 	sock_err = recv(hsock, buf, BUFFER_SIZE, 0);
@@ -185,7 +196,9 @@ int download_file(SOCKET sock)
 	
 	file_size = atoi(buf);
 	
-	printf("taille du fichier : %d\n\n", file_size);
+	file = fopen("log.txt", "a");
+	fprintf(file, "taille du fichier : %d\n", file_size);
+	fclose(file);
 	
 	/* On crée un nouveau fichier et on le construit au fur et à mesure
 	 * de la réception des octets. */
@@ -219,6 +232,11 @@ int download_file(SOCKET sock)
 	}
 	
 	fclose(file);
+	
+	printf("Telechargement termine.\n\n");
+	printf("Appuyez sur une touche pour continuer.\n");
+	getchar();
+	getchar();
 	
 	return 0;
 }

@@ -88,9 +88,13 @@ int main(int argc, char *argv[])
 				kill(getpid(), SIGTERM);
 			
 			default :	// Père.
-				/* Se renseigner sur le WNOHANG.
-				 * Lorsqu'un fils est tué, il passe en zombie jusqu'à ce que le père se termine.
-				 * Régler ça et tuer le fils directement ! */
+				/* WNOHANG est utilisé pour que le père attende la fin
+				 * du fils de manière non bloquante.
+				 * Lors de l'appel à waitpid(), si le fils est terminé,
+				 * on le tue, sinon, on inore sa terminaison. Voilà
+				 * pourquoi on se retrouve malheureusement avec un
+				 * nombre important de fils zombies qui subsistent
+				 * jusqu'à la mort du père. */
 				waitpid(-1, &status, WNOHANG);
 		}
 	}

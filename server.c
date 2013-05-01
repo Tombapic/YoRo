@@ -162,6 +162,9 @@ int authenticate(SOCKET sock)
 			if(sock_err == SOCKET_ERROR) return -1;
 			
 			printf("Authentification annulee.\n");
+			printf("Appuyez sur une touche pour continuer.\n");
+			getchar();
+			getchar();
 			
 			return 1;
 		}
@@ -176,6 +179,9 @@ int authenticate(SOCKET sock)
 	if(sock_err == SOCKET_ERROR) return -1;
 	
 	printf("Vous etes maintenant authentifie.\n");
+	printf("Appuyez sur une touche pour continuer.\n");
+	getchar();
+	getchar();
 	
 	return 0;
 }

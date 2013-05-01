@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -23,22 +24,13 @@ int main(int argc, char *argv[])
 	
 	print_header();
 	
-	// Pointeur sur la base de données du serveur.
-	sqlite3 *db;
-	int db_err;
+	FILE *file;
 	
+	pid_t pid;
 	int status;
 	int sock_err;
 	int user_choice;
 	char *server_addr = argv[1];
-	
-	db_err = sqlite3_open("server.db", &db);
-	
-	if(db_err)
-	{
-		printf("Erreur : echec de l'ouverture de la base de donnees.\n");
-		return EXIT_FAILURE;
-	}
 	
 	// Socket et contexte d'adressage du serveur.
 	SOCKET sock;
@@ -58,7 +50,7 @@ int main(int argc, char *argv[])
 	sock = socket(AF_INET, SOCK_STREAM, 0);
 	main_sock = socket(AF_INET, SOCK_STREAM, 0);
 	
-	if(sock == INVALID_SOCKET)
+	if((sock == INVALID_SOCKET) || (main_sock == INVALID_SOCKET))
 	{
 		printf("Erreur : echec de la creation de la socket.\n");
 		return EXIT_FAILURE;
@@ -132,16 +124,29 @@ int main(int argc, char *argv[])
 	/* On crée un processus chargé d'écouter les nouveaux clients.
 	 * Le processus père sera chargé d'exécuter les demandes de
 	 * l'utilisateur. */
-	switch(fork())
+	switch(pid = fork())
 	{
 		case -1 :	// Erreur.
 		break;
 		
 		case 0 :	// Fils.
+			/*sock = socket(AF_INET, SOCK_STREAM, 0);
+			sin.sin_addr.s_addr = htonl(INADDR_ANY);
+			sin.sin_family = AF_INET;
+			sin.sin_port = htons(HOST_PORT);*/
+			
 			sock_err = bind(sock, (SOCKADDR*)&sin, ssize);
+			
+			file = fopen("log.txt", "a");
+			fprintf(file, "bind : %d, errno : %d\n", sock_err, errno);
+			fclose(file);
 			
 			// 5 est le nombre maximal de connexions pouvant être mises en attente.
 			sock_err = listen(sock, 5);
+			
+			file = fopen("log.txt", "a");
+			fprintf(file, "listen : %d\n", sock_err);
+			fclose(file);
 			
 			if(sock_err == SOCKET_ERROR)
 			{
@@ -151,7 +156,15 @@ int main(int argc, char *argv[])
 			
 			while(1)
 			{
+				file = fopen("log.txt", "a");
+				fputs("Attente d'un pair\n", file);
+				fclose(file);
+				
 				csock = accept(sock, (SOCKADDR*)&csin, &csize);
+				
+				file = fopen("log.txt", "a");
+				fputs("Accept\n", file);
+				fclose(file);
 				
 				if(csock == INVALID_SOCKET)
 					return EXIT_FAILURE;
@@ -162,7 +175,13 @@ int main(int argc, char *argv[])
 					break;
 					
 					case 0 :	// Fils.
+						file = fopen("log.txt", "a");
+						fputs("Début de gestion d'un pair\n", file);
+						fclose(file);
 						handle_peer(csock, csin);
+						file = fopen("log.txt", "a");
+						fputs("Fin de gestion d'un pair\n", file);
+						fclose(file);
 						close(csock);
 						kill(getpid(), SIGTERM);
 					
@@ -170,9 +189,10 @@ int main(int argc, char *argv[])
 						waitpid(-1, &status, WNOHANG);
 				}
 			}
-			kill(getpid(), SIGTERM);
 		
 		default :	// Père.
+			waitpid(-1, &status, WNOHANG);
+			
 			// Le terminal attend les instructions de l'utilisateur.
 			handle_user(main_sock, main_sin);
 			
@@ -182,10 +202,9 @@ int main(int argc, char *argv[])
 			if(sock_err == SOCKET_ERROR)
 				return EXIT_FAILURE;
 			
-			waitpid(-1, &status, WNOHANG);
+			close(sock);
+			kill(pid, SIGTERM);	// On tue le processus de transfert de fichiers.
 	}
-	
-	close(sock);
 	
 	return EXIT_SUCCESS;
 }
