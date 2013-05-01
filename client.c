@@ -23,7 +23,7 @@
 int handle_user(SOCKET sock, SOCKADDR_IN sin)
 {
 	int user_choice = 0;
-	
+	int nbr_files =0;
 	print_header();
 	
 	// Tant que l'utilisateur est connecté.
@@ -36,7 +36,10 @@ int handle_user(SOCKET sock, SOCKADDR_IN sin)
 			
 			scanf("%1d", &user_choice);
 			
-			if(user_choice == 1) {}
+			if(user_choice == 1) {
+				nbr_files = search_request(sock);
+				receive_search_result(sock,nbr_files);
+				}
 				// Appel de la fonction de recherche de fichier codée par Yossra.
 			
 			else if(user_choice == 2)
@@ -233,4 +236,116 @@ void print_header()
 	printf("--------------------------------------------------------------------------------");
 	printf("                                      HOTE\n");
 	printf("--------------------------------------------------------------------------------\n");
+}
+/**
+ * si l'utilisateur veut faire une recherche par mots clé, cette fonction prévient le serveur central 
+ * et lui envoie la liste des mots a chercher.
+ * 
+ * Paramètre :
+ * - sock : la socket sur laquelle envoyer les informations d'authentification.
+ * 
+ * Retour : retourne le nombre de fichiers trouvés.
+ **/
+int search_request(SOCKET sock){
+	
+	int sock_err=0;
+	char buf[BUFFER_SIZE];
+	int i; 
+	int nbr_mots;
+	int nbr_files=0;
+	char text[BUFFER_SIZE];
+		
+	char **tableau= (char**)malloc(30*sizeof(char*));
+	for(i=0;i<30;i++){
+		tableau[i] = (char*) malloc (50*sizeof(char));
+	}
+	/*
+	 * for(i=0;i<10;++i) free(tableau[i]);
+		free(tableau);
+	 */
+	
+		//prevenir le serveur central
+		strcpy(buf, "search"); 
+		sock_err = send(sock, buf, BUFFER_SIZE, 0);
+		
+		if(sock_err == SOCKET_ERROR) { 
+			printf("sock_err (send search)= %d\n",sock_err);
+			return -1;
+		}
+	
+		/*Demander à l'utilisateur la liste de mots clés à chercher */
+				printf("Appuyez sur une touche Puis donnez la liste de vos mots clé \n");
+				getchar();
+				getchar();
+				fgets(text,sizeof text,stdin);
+				char *p = strchr(text, '\n');
+					if (p)
+					{
+						*p = 0; 
+					}
+
+				/* La fonction cut nous permet de récupérer les mots clés dans un tableau*/
+				nbr_mots =cut(tableau,text);
+				
+			
+				
+					// Envoyer le nombre de mots à chercher
+					sock_err = send(sock,&nbr_mots, BUFFER_SIZE, 0);
+					if(sock_err == SOCKET_ERROR) return -1;
+
+					/* Il faut envoyer le tableau de mots au serveur pour qu'il effectue la recherche*/	
+					for(i=0; i<nbr_mots;i++){
+						sock_err = send(sock, tableau[i], BUFFER_SIZE, 0);	
+						
+						if(sock_err == SOCKET_ERROR) return -1;	
+					}
+					
+					/*Ecouter la reponse du serveur central pour recevoir le nombre de fichiers trouvés*/
+						sock_err = recv(sock,&nbr_files, BUFFER_SIZE, 0);
+		
+						if(sock_err == SOCKET_ERROR) return -1;
+						else
+						{
+							printf("\n Le nombre de fichiers trouvés est = %d. \n Appuyez sur une touche pour les afficher.\n" , nbr_files);
+							getchar();
+								
+						}
+					
+				
+	return nbr_files;
+}
+int cut(char** tableau,char* source){
+
+	char delims[] = " ";
+	char *result = NULL;
+	int i=0;
+	int nombre_mots=0;
+	result = strtok( source, delims );
+	
+		while( result != NULL ) {
+			strcpy(tableau[i],result);
+			result = strtok( NULL, delims );
+			i++;
+			nombre_mots= nombre_mots+1;
+		}
+			
+	return nombre_mots;
+}
+int receive_search_result(SOCKET sock,int nbr_files){
+	int sock_err =0;
+	int i;
+	char buf[BUFFER_SIZE];
+	for(i=0; i<nbr_files;i++){
+	 	sock_err = recv(sock, buf, BUFFER_SIZE, 0);
+		
+		if(sock_err == SOCKET_ERROR) return -1;
+			else
+			{
+				printf("%s\n" , buf);
+								
+			}
+	}
+	printf("\nAppuyez sur une touche pour retourner au menu principal\n");
+	getchar();
+	return 0;
 }

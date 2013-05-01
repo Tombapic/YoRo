@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <crypt.h>
 
 #include "server.h"
 
@@ -22,6 +23,8 @@ int create_account(SOCKET sock)
 {
 	int sock_err;
 	char buf[BUFFER_SIZE];
+	char salt[2];
+	char* bufcrypt;
 	
 	// On avertit le serveur central que l'on désire créer un compte.
 	strcpy(buf, "add");
@@ -38,6 +41,11 @@ int create_account(SOCKET sock)
 	
 	printf("Password ? ");
 	scanf("%19s", buf);
+	/*crypter le mdp et l'envoyer au serveur central*/
+	bufcrypt= crypt(salt,buf);
+	strcpy(buf,bufcrypt);
+	printf("mdp crypté = %s\n",buf);
+	/* fin crypt */
 	
 	sock_err = send(sock, buf, BUFFER_SIZE, 0);
 	
@@ -63,6 +71,11 @@ int create_account(SOCKET sock)
 		
 		printf("Password ? ");
 		scanf("%19s", buf);
+		/*crypter le mdp et l'envoyer au serveur central*/
+		bufcrypt= crypt(salt,buf);
+		strcpy(buf,bufcrypt);
+		printf("mdp crypté = %s\n",buf);
+		/* fin crypt */
 		
 		sock_err = send(sock, buf, BUFFER_SIZE, 0);
 		
@@ -90,6 +103,8 @@ int authenticate(SOCKET sock)
 	int sock_err;
 	char user_choice;
 	char buf[BUFFER_SIZE];
+	char salt[2];
+	char* bufcrypt;
 	
 	/*
 	 * Annonce de l'authentification au serveur afin qu'il puisse appeler la fonction adéquate de son côté.
@@ -112,6 +127,11 @@ int authenticate(SOCKET sock)
 	
 	printf("Password ? ");
 	scanf("%19s", buf);
+	/*crypter le mdp et l'envoyer au serveur central*/
+	bufcrypt= crypt(salt,buf);
+	strcpy(buf,bufcrypt);
+	printf("mdp crypté = %s\n",buf);
+	/* fin crypt */
 	
 	sock_err = send(sock, buf, BUFFER_SIZE, 0);
 	
@@ -143,6 +163,11 @@ int authenticate(SOCKET sock)
 			
 			printf("Password ? ");
 			scanf("%19s", buf);
+			/*crypter le mdp et l'envoyer au serveur central*/
+			bufcrypt= crypt(salt,buf);
+			strcpy(buf,bufcrypt);
+			printf("mdp crypté = %s\n",buf);
+			/* fin crypt */
 			
 			sock_err = send(sock, buf, BUFFER_SIZE, 0);
 			
