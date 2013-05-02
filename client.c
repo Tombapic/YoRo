@@ -11,6 +11,7 @@
 #include <stdlib.h>
 
 #include "client.h"
+#include "server.h"
 
 /**
  * Récupère les commandes de l'utilisateur et exécute les fonctions correspondantes.
@@ -24,24 +25,31 @@
 int handle_user(SOCKET sock, SOCKADDR_IN sin)
 {
 	int user_choice = 0;
-	
+	int nbr_files =0;
 	print_header();
 	
 	// Tant que l'utilisateur est connecté.
-	while(user_choice != 3)
+	while(user_choice != 4)
 	{
 			print_header();
 			printf("1. Rechercher un fichier\n");
 			printf("2. Telecharger un fichier\n");
-			printf("3. Se deconnecter\n");
+			printf("3. Ajouter une description\n");
+			printf("4. Se deconnecter\n");
 			
 			scanf("%1d", &user_choice);
 			
-			if(user_choice == 1) {}
-				// Appel de la fonction de recherche de fichier codée par Yossra.
+			if(user_choice == 1)
+			{
+				nbr_files = search_request(sock);
+				receive_search_result(sock,nbr_files);
+			}
 			
 			else if(user_choice == 2)
 				download_file(sock);
+			
+			else if(user_choice == 3)
+				add_description(sock);
 	}
 	
 	return 0;
@@ -126,7 +134,7 @@ int download_file(SOCKET sock)
 	
 	char file_name[100];
 	// Préfixe ajouté au nom du fichier pour le placer dans le répertoire des fichiers partagés.
-	char path[100] = "P2P/dl_";
+	char path[100] = "P2P/";
 	int file_size, remaining_bytes;
 	
 	// Socket et contexte d'adressage de l'hôte.
@@ -233,6 +241,11 @@ int download_file(SOCKET sock)
 	
 	fclose(file);
 	
+	/* On a téléchargé le fichier. Il faut maintenant actualiser sa
+	 * liste auprès du serveur central. */
+	//update_shared_files();
+	//send_shared_files(sock);
+	
 	printf("Telechargement termine.\n\n");
 	printf("Appuyez sur une touche pour continuer.\n");
 	getchar();
@@ -251,4 +264,157 @@ void print_header()
 	printf("--------------------------------------------------------------------------------");
 	printf("                                      HOTE\n");
 	printf("--------------------------------------------------------------------------------\n");
+}
+/**
+ * si l'utilisateur veut faire une recherche par mots clé, cette fonction prévient le serveur central 
+ * et lui envoie la liste des mots a chercher.
+ * 
+ * Paramètre :
+ * - sock : la socket sur laquelle envoyer les informations d'authentification.
+ * 
+ * Retour : retourne le nombre de fichiers trouvés.
+ **/
+int search_request(SOCKET sock)
+{
+	int sock_err=0;
+	char buf[BUFFER_SIZE];
+	int i; 
+	int nbr_mots;
+	int nbr_files=0;
+	char text[BUFFER_SIZE];
+		
+	char **tableau= (char**)malloc(30*sizeof(char*));
+	for(i=0;i<30;i++){
+		tableau[i] = (char*) malloc (50*sizeof(char));
+	}
+	
+	//prevenir le serveur central
+	strcpy(buf, "search"); 
+	sock_err = send(sock, buf, BUFFER_SIZE, 0);
+	
+	if(sock_err == SOCKET_ERROR) { 
+		printf("sock_err (send search)= %d\n",sock_err);
+		return -1;
+	}
+
+	/*Demander à l'utilisateur la liste de mots clés à chercher */
+	print_header();
+	printf("Appuyez sur une touche, donnez la liste de vos mots clés, puis appuyez sur une touche.\n\n");
+	getchar();
+	getchar();
+	fgets(text,sizeof text,stdin);
+	char *p = strchr(text, '\n');
+	if (p)
+	{
+		*p = 0; 
+	}
+
+	/* La fonction cut nous permet de récupérer les mots clés dans un tableau*/
+	nbr_mots = cut(tableau,text);
+	
+	// Envoyer le nombre de mots à chercher
+	sock_err = send(sock,&nbr_mots, BUFFER_SIZE, 0);
+	if(sock_err == SOCKET_ERROR) return -1;
+
+	/* Il faut envoyer le tableau de mots au serveur pour qu'il effectue la recherche*/	
+	for(i=0; i<nbr_mots;i++){
+		sock_err = send(sock, tableau[i], BUFFER_SIZE, 0);	
+		if(sock_err == SOCKET_ERROR) return -1;	
+	}
+	
+	/*Ecouter la reponse du serveur central pour recevoir le nombre de fichiers trouvés*/
+	sock_err = recv(sock,&nbr_files, BUFFER_SIZE, 0);
+
+	if(sock_err == SOCKET_ERROR) return -1;
+	else
+	{
+		print_header();
+		printf("%d fichier(s) trouve(s), appuyez sur une touche pour les afficher.\n" , nbr_files);
+		getchar();
+	}
+		
+	return nbr_files;
+}
+int cut(char** tableau,char* source)
+{
+	char delims[] = " ";
+	char *result = NULL;
+	int i=0;
+	int nombre_mots=0;
+	result = strtok( source, delims );
+	
+	while( result != NULL )
+	{
+		strcpy(tableau[i],result);
+		result = strtok( NULL, delims );
+		i++;
+		nombre_mots= nombre_mots+1;
+	}
+	
+	return nombre_mots;
+}
+int receive_search_result(SOCKET sock,int nbr_files)
+{
+	int sock_err =0;
+	int i;
+	char buf[BUFFER_SIZE];
+	for(i=0; i<nbr_files;i++)
+	{
+	 	sock_err = recv(sock, buf, BUFFER_SIZE, 0);
+		
+		if(sock_err == SOCKET_ERROR) return -1;
+		else
+		{
+			printf("%s\n" , buf);
+							
+		}
+	}
+	
+	printf("\nAppuyez sur une touche pour retourner au menu principal\n");
+	getchar();
+	return 0;
+}
+
+/**
+ * Ajoute une description à un fichier.
+ * 
+ * Paramètre :
+ * - sock : la socket sur laquelle communiquer avec le serveur central.
+ * 
+ **/
+// Ne fonctionne pas car espaces dans la description non pris en compte. On oublie !
+void add_description(SOCKET sock)
+{
+	sqlite3 *db;
+	char *query;
+	int db_err = -1;
+	char file_name[100];
+	char file_desc[200];
+	
+	db_err = sqlite3_open("server.db", &db);
+	
+	print_header();
+	printf("Nom du fichier à decrire ?\n");
+	scanf("%99s", file_name);
+	
+	printf("\n\nDescription ?\n");
+	scanf("%199s", file_desc);
+	
+	query = sqlite3_mprintf("UPDATE Fichiers SET description = '%q' WHERE chemin = '%q';", file_desc, file_name);
+	db_err = sqlite3_exec(db, query, NULL, 0, NULL);
+	
+	while(db_err != SQLITE_OK)
+	{
+		printf("Erreur : le fichier n'existe pas.\n\n");
+		
+		printf("\n\nDescription ?\n");
+		scanf("%199s", file_desc);
+		
+		query = sqlite3_mprintf("UPDATE Fichiers SET description = '%q' WHERE chemin = '%q';", file_desc, file_name);
+		db_err = sqlite3_exec(db, query, NULL, 0, NULL);
+	}
+	
+	// Mise à jour des fichiers sur le serveur pour prendre en compte la description.
+	//update_shared_files();
+	//send_shared_files(sock);
 }

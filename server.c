@@ -7,8 +7,10 @@
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <crypt.h>
 
 #include "server.h"
+#include "client.h"
 
 /**
  * Crée un compte sur le réseau.
@@ -22,6 +24,10 @@ int create_account(SOCKET sock)
 {
 	int sock_err;
 	char buf[BUFFER_SIZE];
+	char salt[] = "YR";
+	char* bufcrypt;
+	
+	print_header();
 	
 	// On avertit le serveur central que l'on désire créer un compte.
 	strcpy(buf, "add");
@@ -36,8 +42,14 @@ int create_account(SOCKET sock)
 	
 	if(sock_err == SOCKET_ERROR) return -1;
 	
-	printf("Password ? ");
-	scanf("%19s", buf);
+	//printf("Password ? ");
+	//scanf("%19s", buf);
+	strcpy(buf, getpass("Password ? "));
+	/*crypter le mdp et l'envoyer au serveur central*/
+	bufcrypt= crypt(salt,buf);
+	strcpy(buf,bufcrypt);
+	//printf("mdp crypte = %s\n",buf);
+	/* fin crypt */
 	
 	sock_err = send(sock, buf, BUFFER_SIZE, 0);
 	
@@ -61,8 +73,14 @@ int create_account(SOCKET sock)
 		
 		if(sock_err == SOCKET_ERROR) return -1;
 		
-		printf("Password ? ");
-		scanf("%19s", buf);
+		//printf("Password ? ");
+		//scanf("%19s", buf);
+		strcpy(buf, getpass("Password ? "));
+		/*crypter le mdp et l'envoyer au serveur central*/
+		bufcrypt= crypt(salt,buf);
+		strcpy(buf,bufcrypt);
+		//printf("mdp crypté = %s\n",buf);
+		/* fin crypt */
 		
 		sock_err = send(sock, buf, BUFFER_SIZE, 0);
 		
@@ -90,6 +108,10 @@ int authenticate(SOCKET sock)
 	int sock_err;
 	char user_choice;
 	char buf[BUFFER_SIZE];
+	char salt[] = "YR";
+	char* bufcrypt;
+	
+	print_header();
 	
 	/*
 	 * Annonce de l'authentification au serveur afin qu'il puisse appeler la fonction adéquate de son côté.
@@ -110,8 +132,14 @@ int authenticate(SOCKET sock)
 	
 	if(sock_err == SOCKET_ERROR) return -1;
 	
-	printf("Password ? ");
-	scanf("%19s", buf);
+	//printf("Password ? ");
+	//scanf("%19s", buf);
+	strcpy(buf, getpass("Password ? "));
+	/*crypter le mdp et l'envoyer au serveur central*/
+	bufcrypt= crypt(salt,buf);
+	strcpy(buf,bufcrypt);
+	//printf("mdp crypté = %s\n",buf);
+	/* fin crypt */
 	
 	sock_err = send(sock, buf, BUFFER_SIZE, 0);
 	
@@ -123,6 +151,7 @@ int authenticate(SOCKET sock)
 	// Tant que l'authentification échoue.
 	while(strcmp(buf, "authok") != 0)
 	{
+		print_header();
 		printf("Identifiant et/ou mot de passe incorrect. Reessayer ? (o/n) ");
 		scanf("%c", &user_choice);
 		
@@ -141,8 +170,14 @@ int authenticate(SOCKET sock)
 			
 			if(sock_err == SOCKET_ERROR) return -1;
 			
-			printf("Password ? ");
-			scanf("%19s", buf);
+			//printf("Password ? ");
+			//scanf("%19s", buf);
+			strcpy(buf, getpass("Password ? "));
+			/*crypter le mdp et l'envoyer au serveur central*/
+			bufcrypt= crypt(salt,buf);
+			strcpy(buf,bufcrypt);
+			//printf("mdp crypté = %s\n",buf);
+			/* fin crypt */
 			
 			sock_err = send(sock, buf, BUFFER_SIZE, 0);
 			
@@ -161,6 +196,7 @@ int authenticate(SOCKET sock)
 	
 			if(sock_err == SOCKET_ERROR) return -1;
 			
+			print_header();
 			printf("Authentification annulee.\n");
 			printf("Appuyez sur une touche pour continuer.\n");
 			getchar();
@@ -178,6 +214,7 @@ int authenticate(SOCKET sock)
 	
 	if(sock_err == SOCKET_ERROR) return -1;
 	
+	print_header();
 	printf("Vous etes maintenant authentifie.\n");
 	printf("Appuyez sur une touche pour continuer.\n");
 	getchar();

@@ -117,6 +117,14 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin)
 {
 	char buf[BUFFER_SIZE];
 	int sock_err;
+	int i;
+	char **search_res= (char**)malloc(30*sizeof(char*));
+	for(i=0;i<30;i++){
+		search_res[i] = (char*) malloc (50*sizeof(char));
+	}
+	int nbr_files =0;
+	
+	
 	
 	sock_err = recv(sock, buf, BUFFER_SIZE, 0);
 	if(sock_err == SOCKET_ERROR) return -1;
@@ -169,8 +177,14 @@ int handle_client(SOCKET sock, SOCKADDR_IN sin)
 			sock_err = get_owner(sock, sin);
 			if(sock_err == -1) return -1;
 		}
-		
-		/* RAJOUTER TOUTES LES FONCTIONS DE GESTION ICI. */
+		//si le client demande une recherche par mots clés
+		else if(strcmp(buf,"search") == 0)
+		{
+			
+			nbr_files = search(sock,search_res);
+			send_search_result(sock,nbr_files,search_res);
+			
+		}
 		
 		sock_err = recv(sock, buf, BUFFER_SIZE, 0);
 		if(sock_err == SOCKET_ERROR) return -1;
@@ -564,3 +578,114 @@ int get_owner(SOCKET sock, SOCKADDR_IN sin)
 	
 	return 0;
 }
+/**
+ * Fonction pour recevoir les mots clés à chercher dans la database
+ * 
+ * Paramètre :
+ * - sock	: la socket sur laquelle reçevoir les informations d'authentification.
+ * 
+ * Retour : le nombre de fichiers trouvés.
+ * */
+int search(SOCKET sock, char** search_res)
+{
+	char searchbuf[BUFFER_SIZE];
+	int nbr=0;
+	int i,k,sock_err;
+	char * comp_desc = NULL;
+	char * comp_name = NULL;
+	int j=0;
+		
+	sqlite3 *db;
+	int db_err;
+	char *query;
+	sqlite3_stmt *stmt;	
+	char buf[BUFFER_SIZE];
+	
+	//Recevoir le nombre de mots à chercher
+	sock_err = recv(sock, &nbr, BUFFER_SIZE, 0);
+	
+	if(sock_err == SOCKET_ERROR) return -1;
+	//printf("le nombre de mots reçu est = %d\n",nbr);	
+		
+	if(nbr != 0) {
+		//recevoir la liste des mots clés à chercher
+		printf("Reception des mots clés à chercher ...\n");
+		
+		for (i=0;i<nbr;i++){
+			sock_err = recv(sock, searchbuf, BUFFER_SIZE, 0);
+		
+			if(sock_err == SOCKET_ERROR) return -1;
+			else
+			{
+				printf("Recu: searchbuf[%d] = %s\n",i,searchbuf);
+			
+				//recupere tous les fichiers de main-server.db
+				db_err = sqlite3_open("main-server.db", &db);
+				
+				if(db_err)
+				{
+					printf("Erreur : echec de l'ouverture de la base de donnees.\n");
+					return EXIT_FAILURE;
+				}
+				// Rechercher si y a des fichiers dans la base qui contiennent un de ces mots clés.
+				query = sqlite3_mprintf("SELECT * FROM Fichiers;"); // on recupere tous les fichiers de la base
+						
+				sqlite3_prepare(db, query, -1, &stmt, NULL);
+				db_err = sqlite3_step(stmt);
+				
+				// Tant qu'il reste des tuples à lire.
+				while(db_err == SQLITE_ROW)
+				{
+					strcpy(buf, (char*)sqlite3_column_text(stmt, 2));	// Lecture de la description du fichier.
+				
+					comp_desc = strstr(buf,searchbuf);			//comparer avec tous les mots clés dans searchbuf
+					
+					
+					strcpy(buf, (char*)sqlite3_column_text(stmt, 0));	// Lecture du nom du fichier. 
+					comp_name = strstr(buf,searchbuf);			//comparer avec tous les mots clés				
+					
+					
+					//si la description ou le nom contient le mot clé => envoie à l'utilisateur
+					if(comp_name != NULL || comp_desc != NULL) 
+					{
+						printf("Le mot  %s est trouvé dans %s\n", searchbuf,buf);
+						 int exist = 0;
+						//ajouter le nom du fichier trouvé au tableau des resultats s'il n'existe pas déjà
+						for(k =0; k<j;k++){
+							if(strcmp(search_res[k],buf) == 0)
+								exist = 1;
+						}
+						if(exist == 0){
+							strcpy(search_res[j],buf);
+							j++;
+						}
+						
+					}
+					
+					db_err = sqlite3_step(stmt); //avancer au prochain fichier
+				}
+				
+				sqlite3_close(db);
+			}
+		}
+	}
+	//envoyer le nombre de fichiers trouvé au terminal
+	sock_err=send(sock,&j,BUFFER_SIZE,0);
+	if(sock_err == SOCKET_ERROR) return -1;
+	
+return j;
+}		
+				
+int send_search_result(SOCKET sock, int nbr_files,char ** search_res){
+	
+	int i,sock_err;
+	
+	for(i= 0; i<nbr_files;i++){
+		sock_err = send(sock,search_res[i], BUFFER_SIZE, 0);
+			if(sock_err == SOCKET_ERROR) return -1;
+			else {
+				printf("Le fichier %s est envoyé au terminal.\n",search_res[i]);}
+	}
+	return 0;
+}
+			

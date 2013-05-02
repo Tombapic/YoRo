@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-Wall -g
-LDFLAGS=-lsqlite3 -L/usr/local/lib
+LDFLAGS=-lsqlite3 -L/usr/local/lib -lcrypt
 EXEC=main-server host server client
 
 all: main-server host

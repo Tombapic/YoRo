@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 	
-	printf("Connexion à %s sur le port %d\n", inet_ntoa(main_sin.sin_addr), htons(main_sin.sin_port));
+	printf("Connexion à %s sur le port %d\n\n", inet_ntoa(main_sin.sin_addr), htons(main_sin.sin_port));
 	
 	printf("1. S'authentifier\n");
 	printf("2. Creer un compte\n");
@@ -203,6 +203,7 @@ int main(int argc, char *argv[])
 				return EXIT_FAILURE;
 			
 			close(sock);
+			close(main_sock);
 			kill(pid, SIGTERM);	// On tue le processus de transfert de fichiers.
 	}
 	
